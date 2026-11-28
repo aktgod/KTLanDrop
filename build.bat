@@ -7,7 +7,7 @@ if not exist "%CSC%" (
     pause
     exit /b 1
 )
-"%CSC%" /nologo /target:winexe /optimize+ /out:KTLanDrop.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll *.cs
+"%CSC%" /nologo /target:winexe /optimize+ /out:KTLanDrop.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll *.cs
 if %errorlevel% neq 0 (
     echo [Error] Build failed.
     pause

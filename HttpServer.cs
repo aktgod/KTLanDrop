@@ -141,6 +141,14 @@ namespace KTLanDrop
                     {
                         HandleListFiles(stream, GetQueryParam(query, "dir"));
                     }
+                    else if (method == "GET" && path == "/api/comic/info")
+                    {
+                        SendText(stream, 200, "OK", "application/json; charset=utf-8", ComicHelper.GetComicInfoJson(ShareRoot, GetQueryParam(query, "path")));
+                    }
+                    else if ((method == "GET" || method == "HEAD") && path == "/api/comic/page")
+                    {
+                        ComicHelper.ServeComicPage(stream, ShareRoot, GetQueryParam(query, "path"), GetQueryParam(query, "entry"), method == "HEAD");
+                    }
                     else if ((method == "GET" || method == "HEAD") && path == "/api/download")
                     {
                         HandleDownload(stream, GetQueryParam(query, "path"), GetQueryParam(query, "dl") == "1", method == "HEAD");
@@ -424,6 +432,8 @@ namespace KTLanDrop
 <head>
 <meta charset=""utf-8"">
 <meta name=""viewport"" content=""width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"">
+<meta name=""apple-mobile-web-app-capable"" content=""yes"">
+<meta name=""apple-mobile-web-app-status-bar-style"" content=""black-translucent"">
 <title>KTLanDrop · 电脑 ↔ iPad 互传</title>
 <style>
 :root{--bg:#f4f6f9;--card:#fff;--primary:#2563eb;--text:#18181b;--muted:#71717a;--border:#e4e4e7;}
@@ -463,6 +473,29 @@ main{max-width:860px;margin:0 auto;padding:14px;}
 .send-btn{background:var(--primary);color:#fff;border:none;border-radius:10px;padding:0 18px;font-size:15px;font-weight:600;cursor:pointer;}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#18181b;color:#fff;padding:8px 16px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99;}
 .toast.show{opacity:1;}
+.read-btn{padding:6px 10px;background:#fef3c7;color:#b45309;border:none;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;}
+#readerOverlay{display:none;position:fixed;inset:0;background:#111;color:#fff;z-index:200;flex-direction:column;}
+#readerOverlay.open{display:flex;}
+.r-bar{position:fixed;left:0;right:0;background:rgba(17,17,17,.9);backdrop-filter:blur(8px);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;z-index:210;transition:opacity .2s,transform .2s;}
+.r-top{top:0;border-bottom:1px solid #27272a;}
+.r-bot{bottom:0;border-top:1px solid #27272a;}
+.r-hidden .r-top{opacity:0;transform:translateY(-100%);pointer-events:none;}
+.r-hidden .r-bot{opacity:0;transform:translateY(100%);pointer-events:none;}
+.r-btn{background:#27272a;color:#f4f4f5;border:none;border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;}
+.r-title{flex:1;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;}
+.r-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative;}
+.r-webtoon{max-width:900px;margin:0 auto;padding:0;}
+.r-webtoon img{width:100%;display:block;min-height:120px;background:#18181b;}
+.r-page-box{width:100%;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;user-select:none;}
+.r-page-box img{max-width:100%;max-height:100vh;object-fit:contain;}
+.r-slider{flex:1;margin:0 8px;}
+#chDrawer{display:none;position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.55);}
+#chDrawer.open{display:flex;justify-content:flex-end;}
+.ch-panel{width:min(320px,82vw);height:100%;background:#18181b;color:#f4f4f5;display:flex;flex-direction:column;border-left:1px solid #27272a;}
+.ch-head{padding:14px 16px;font-weight:700;border-bottom:1px solid #27272a;display:flex;justify-content:space-between;align-items:center;}
+.ch-list{flex:1;overflow-y:auto;padding:8px;}
+.ch-item{padding:11px 12px;border-radius:8px;cursor:pointer;font-size:14px;margin-bottom:4px;word-break:break-all;}
+.ch-item.active{background:#2563eb;color:#fff;font-weight:600;}
 </style>
 </head>
 <body>
@@ -494,6 +527,28 @@ main{max-width:860px;margin:0 auto;padding:14px;}
   </section>
 </main>
 <div id=""toast"" class=""toast""></div>
+<div id=""readerOverlay"">
+  <div class=""r-bar r-top"">
+    <button class=""r-btn"" onclick=""closeReader()"">✕ 关闭</button>
+    <div id=""rTitle"" class=""r-title"">加载中...</div>
+    <button id=""rModeBtn"" class=""r-btn"" onclick=""toggleReadMode()"">📜 条漫</button>
+    <button id=""rDirBtn"" class=""r-btn"" onclick=""toggleRtl()"" style=""display:none"">右→左</button>
+    <button class=""r-btn"" onclick=""toggleDrawer(true)"">📑 目录</button>
+  </div>
+  <div id=""rBody"" class=""r-body""></div>
+  <div class=""r-bar r-bot"">
+    <button class=""r-btn"" onclick=""stepChapter(-1)"">◀ 上一话</button>
+    <input id=""rSlider"" class=""r-slider"" type=""range"" min=""1"" max=""1"" value=""1"" oninput=""jumpPage(this.value-1)"">
+    <span id=""rPageTxt"" style=""font-size:12px;min-width:48px;text-align:center"">1/1</span>
+    <button class=""r-btn"" onclick=""stepChapter(1)"">下一话 ▶</button>
+  </div>
+</div>
+<div id=""chDrawer"" onclick=""if(event.target===this)toggleDrawer(false)"">
+  <div class=""ch-panel"">
+    <div class=""ch-head""><span>📑 章节目录</span><button class=""r-btn"" onclick=""toggleDrawer(false)"">✕</button></div>
+    <div id=""chList"" class=""ch-list""></div>
+  </div>
+</div>
 <script>
 let curDir='', allItems=[], lastMsgId=0, unreadCount=0, curTab='files';
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800);}
@@ -530,9 +585,11 @@ function renderFiles(){
   const box=document.getElementById('fileList');
   if(!list.length){box.innerHTML='<div class=""row"" style=""color:#71717a"">暂无匹配文件</div>';return;}
   box.innerHTML=list.map(x=>{
-    if(x.isDir) return `<div class=""row""><a class=""fname"" href=""javascript:loadDir('${esc(x.path)}')"">📁 ${esc(x.name)}/</a><span class=""meta"">文件夹</span></div>`;
+    if(x.isDir) return `<div class=""row""><a class=""fname"" href=""javascript:loadDir('${esc(x.path)}')"">📁 ${esc(x.name)}/</a><span class=""meta""><button class=""read-btn"" onclick=""openReader('${esc(x.path)}')"">📖 阅读</button></span></div>`;
     const u='/api/download?path='+encodeURIComponent(x.path);
-    return `<div class=""row""><a class=""fname"" href=""${u}"" target=""_blank"">📄 ${esc(x.name)}</a><span class=""meta""><span>${fmtSize(x.size)}</span><a class=""dl"" href=""${u}&dl=1"">下载</a></span></div>`;
+    const isZip=/\.(zip|cbz)$/i.test(x.name);
+    const readBtn=isZip?`<button class=""read-btn"" onclick=""openReader('${esc(x.path)}')"">📖 阅读</button>`:'';
+    return `<div class=""row""><a class=""fname"" href=""${u}"" target=""_blank"">📄 ${esc(x.name)}</a><span class=""meta""><span>${fmtSize(x.size)}</span>${readBtn}<a class=""dl"" href=""${u}&dl=1"">下载</a></span></div>`;
   }).join('');
 }
 async function uploadFiles(files){
@@ -592,6 +649,108 @@ async function sendChat(){
   pollMsgs();
 }
 loadDir(''); pollMsgs(); setInterval(pollMsgs,1500);
+
+let rInfo=null, rPage=0, rMode=localStorage.getItem('kt_mode')||'webtoon', rRtl=localStorage.getItem('kt_rtl')!=='0', touchX=0;
+function saveProgress(){
+  if(!rInfo||!rInfo.series)return;
+  localStorage.setItem('kt_prog_'+rInfo.series, JSON.stringify({path:rInfo.current,page:rPage}));
+}
+async function openReader(path, keepPage){
+  const ov=document.getElementById('readerOverlay');
+  ov.classList.add('open'); ov.classList.remove('r-hidden');
+  const r=await fetch('/api/comic/info?path='+encodeURIComponent(path));
+  rInfo=await r.json();
+  if(!rInfo.pages||!rInfo.pages.length){toast('该目录或压缩包内没有图片');closeReader();return;}
+  rPage=0;
+  if(!keepPage&&rInfo.series){
+    try{
+      const saved=JSON.parse(localStorage.getItem('kt_prog_'+rInfo.series)||'null');
+      if(saved&&saved.path===rInfo.current&&saved.page>0&&saved.page<rInfo.pages.length){
+        rPage=saved.page; toast('已恢复到第 '+(rPage+1)+' 页');
+      }
+    }catch{}
+  }
+  document.getElementById('rTitle').textContent=rInfo.currentName||'阅读';
+  renderChapters(); renderReaderBody();
+}
+function closeReader(){document.getElementById('readerOverlay').classList.remove('open');toggleDrawer(false);}
+function toggleDrawer(open){document.getElementById('chDrawer').classList.toggle('open',open);}
+function renderChapters(){
+  const box=document.getElementById('chList');
+  box.innerHTML=(rInfo.chapters||[]).map(c=>`<div class=""ch-item ${c.path===rInfo.current?'active':''}"" onclick=""toggleDrawer(false);openReader('${esc(c.path)}',true)"">${c.type==='zip'?'📦':'📁'} ${esc(c.name)}</div>`).join('');
+}
+function toggleReadMode(){
+  rMode=(rMode==='webtoon')?'page':'webtoon';
+  localStorage.setItem('kt_mode',rMode);
+  renderReaderBody();
+}
+function toggleRtl(){
+  rRtl=!rRtl; localStorage.setItem('kt_rtl',rRtl?'1':'0');
+  document.getElementById('rDirBtn').textContent=rRtl?'右→左':'左→右';
+}
+function renderReaderBody(){
+  document.getElementById('rModeBtn').textContent=rMode==='webtoon'?'📜 条漫':'📖 页漫';
+  document.getElementById('rDirBtn').style.display=rMode==='page'?'inline-block':'none';
+  document.getElementById('rDirBtn').textContent=rRtl?'右→左':'左→右';
+  const sl=document.getElementById('rSlider');
+  sl.max=rInfo.pages.length; sl.value=rPage+1;
+  document.getElementById('rPageTxt').textContent=(rPage+1)+'/'+rInfo.pages.length;
+  const body=document.getElementById('rBody');
+  if(rMode==='webtoon'){
+    body.innerHTML='<div class=""r-webtoon"" onclick=""toggleBars()"">'+rInfo.pages.map((u,i)=>`<img loading=""lazy"" data-idx=""${i}"" src=""${u}"">`).join('')+'</div>';
+    body.onscroll=()=>{
+      const imgs=body.querySelectorAll('img');
+      for(let i=0;i<imgs.length;i++){
+        const rc=imgs[i].getBoundingClientRect();
+        if(rc.bottom>100){rPage=i;sl.value=i+1;document.getElementById('rPageTxt').textContent=(i+1)+'/'+rInfo.pages.length;saveProgress();break;}
+      }
+    };
+    if(rPage>0){const t=body.querySelectorAll('img')[rPage];if(t)setTimeout(()=>t.scrollIntoView(),120);}
+  }else{
+    body.onscroll=null;
+    body.innerHTML=`<div class=""r-page-box"" id=""rPageBox""><img id=""rCurImg"" src=""${rInfo.pages[rPage]}""></div>`;
+    const pb=document.getElementById('rPageBox');
+    pb.onclick=e=>{
+      const x=e.clientX/window.innerWidth;
+      if(x<0.3) turnPage(rRtl?1:-1);
+      else if(x>0.7) turnPage(rRtl?-1:1);
+      else toggleBars();
+    };
+    pb.ontouchstart=e=>{touchX=e.changedTouches[0].clientX;};
+    pb.ontouchend=e=>{
+      const dx=e.changedTouches[0].clientX-touchX;
+      if(Math.abs(dx)>45) turnPage((dx>0)==rRtl?1:-1);
+    };
+    preloadNext();
+  }
+  saveProgress();
+}
+function toggleBars(){document.getElementById('readerOverlay').classList.toggle('r-hidden');}
+function preloadNext(){
+  for(let k=1;k<=2;k++){if(rPage+k<rInfo.pages.length){const img=new Image();img.src=rInfo.pages[rPage+k];}}
+}
+function jumpPage(idx){
+  rPage=Math.max(0,Math.min(rInfo.pages.length-1,idx));
+  document.getElementById('rSlider').value=rPage+1;
+  document.getElementById('rPageTxt').textContent=(rPage+1)+'/'+rInfo.pages.length;
+  if(rMode==='webtoon'){const t=document.querySelectorAll('#rBody img')[rPage];if(t)t.scrollIntoView();}
+  else{const im=document.getElementById('rCurImg');if(im)im.src=rInfo.pages[rPage];preloadNext();}
+  saveProgress();
+}
+function turnPage(delta){
+  const next=rPage+delta;
+  if(next<0){stepChapter(-1);return;}
+  if(next>=rInfo.pages.length){stepChapter(1);return;}
+  jumpPage(next);
+}
+function stepChapter(delta){
+  if(!rInfo||!rInfo.chapters)return;
+  const idx=rInfo.chapters.findIndex(c=>c.path===rInfo.current);
+  const ni=idx+delta;
+  if(ni<0){toast('已经是第一话了');return;}
+  if(ni>=rInfo.chapters.length){toast('已经是最后一话了');return;}
+  openReader(rInfo.chapters[ni].path,true);
+}
 </script>
 </body>
 </html>";
