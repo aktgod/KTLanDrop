@@ -60,22 +60,19 @@ namespace KTLanDrop
             ApplyMask(modules, isFunction, bestMask, size);
             DrawFormatBits(modules, bestMask, size);
 
-            int quiet = 3;
+            int quiet = 4;
             int imgSize = (size + quiet * 2) * pixelsPerModule;
             Bitmap bmp = new Bitmap(imgSize, imgSize);
             using (Graphics g = Graphics.FromImage(bmp))
             {
                 g.Clear(Color.White);
-                using (Brush black = new SolidBrush(Color.FromArgb(24, 24, 27)))
+                for (int y = 0; y < size; y++)
                 {
-                    for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
                     {
-                        for (int x = 0; x < size; x++)
+                        if (modules[y, x])
                         {
-                            if (modules[y, x])
-                            {
-                                g.FillRectangle(black, (x + quiet) * pixelsPerModule, (y + quiet) * pixelsPerModule, pixelsPerModule, pixelsPerModule);
-                            }
+                            g.FillRectangle(Brushes.Black, (x + quiet) * pixelsPerModule, (y + quiet) * pixelsPerModule, pixelsPerModule, pixelsPerModule);
                         }
                     }
                 }
@@ -286,14 +283,16 @@ namespace KTLanDrop
         private static void DrawFormatBits(bool[,] m, int mask, int size)
         {
             int data = FormatInfoL[mask];
-            for (int i = 0; i <= 5; i++) m[8, i] = ((data >> i) & 1) != 0;
-            m[8, 7] = ((data >> 6) & 1) != 0;
+            // Copy 1: top-left (MSB=14 at (8,0) .. LSB=0 at (0,8))
+            for (int i = 0; i <= 5; i++) m[8, i] = ((data >> (14 - i)) & 1) != 0;
+            m[8, 7] = ((data >> 8) & 1) != 0;
             m[8, 8] = ((data >> 7) & 1) != 0;
-            m[7, 8] = ((data >> 8) & 1) != 0;
-            for (int i = 9; i < 15; i++) m[14 - i, 8] = ((data >> i) & 1) != 0;
+            m[7, 8] = ((data >> 6) & 1) != 0;
+            for (int i = 0; i <= 5; i++) m[i, 8] = ((data >> i) & 1) != 0;
 
-            for (int i = 0; i < 8; i++) m[size - 1 - i, 8] = ((data >> i) & 1) != 0;
-            for (int i = 8; i < 15; i++) m[8, size - 15 + i] = ((data >> i) & 1) != 0;
+            // Copy 2: bottom-left (MSB=14 at (size-1,8) .. bit 8 at (size-7,8)) and top-right (bit 7 at (8,size-8) .. LSB=0 at (8,size-1))
+            for (int i = 0; i < 7; i++) m[size - 1 - i, 8] = ((data >> (14 - i)) & 1) != 0;
+            for (int i = 0; i < 8; i++) m[8, size - 8 + i] = ((data >> (7 - i)) & 1) != 0;
             m[size - 8, 8] = true;
         }
 
